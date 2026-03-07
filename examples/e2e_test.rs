@@ -172,15 +172,25 @@ impl ChatbotTestHandler {
                     .replier
                     .ai_markdown_card_start(incoming, "AI 助手", "@lALPDfJ6V_FPDmvNAfTNAfQ", None)
                     .await?;
+                instance.set_order(vec![
+                    "msgTitle".to_owned(),
+                    "msgContent".to_owned(),
+                    "msgButtons".to_owned(),
+                ]);
                 println!(
                     "[Chatbot] AI card started, id={:?}",
                     instance.card_instance_id
                 );
 
+                // 第一阶段：思考中（后续会被全量替换）
+                instance.ai_streaming("正在思考中...", true).await?;
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+                // 第二阶段：全量替换为正式内容，然后逐步追加
+                let first = "根据您的问题，以下是我的分析：\n\n";
+                instance.ai_streaming(first, false).await?;
+
                 let chunks = [
-                    "正在思考中",
-                    "...\n\n根据您的问题，",
-                    "以下是我的分析：\n\n",
                     "1. **Rust** 是一门注重安全和性能的系统编程语言\n",
                     "2. **tokio** 提供了高效的异步运行时\n",
                     "3. **serde** 实现了零成本的序列化/反序列化\n\n",
@@ -201,21 +211,23 @@ impl ChatbotTestHandler {
                     serde_json::json!({"text": "📋 查看详情", "color": "blue", "id": "btn_detail", "request": true}),
                     serde_json::json!({"text": "🔄 重新生成", "color": "grey", "id": "btn_retry", "request": true}),
                 ];
-                self.replier
-                    .reply_ai_markdown_button(
-                        incoming,
-                        "### 智能分析报告\n\n\
-                         本月销售数据分析完成：\n\
-                         - 总销售额: ¥128,000\n\
-                         - 环比增长: +15.3%\n\
-                         - 最佳产品: Rust SDK 企业版",
-                        buttons,
-                        "点击按钮查看更多",
-                        "数据分析",
-                        "@lALPDfJ6V_FPDmvNAfTNAfQ",
-                        None,
-                        true,
-                    )
+                let mut instance = self
+                    .replier
+                    .ai_markdown_card_start(incoming, "数据分析", "@lALPDfJ6V_FPDmvNAfTNAfQ", None)
+                    .await?;
+                instance.set_order(vec![
+                    "msgTitle".to_owned(),
+                    "msgContent".to_owned(),
+                    "msgButtons".to_owned(),
+                ]);
+                let md = "### 智能分析报告\n\n\
+                          本月销售数据分析完成：\n\
+                          - 总销售额: ¥128,000\n\
+                          - 环比增长: +15.3%\n\
+                          - 最佳产品: Rust SDK 企业版";
+                instance.ai_streaming(md, true).await?;
+                instance
+                    .ai_finish(Some(md), Some(buttons), "点击按钮查看更多")
                     .await?;
             }
 
