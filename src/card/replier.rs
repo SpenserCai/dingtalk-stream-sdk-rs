@@ -64,6 +64,26 @@ impl CardReplier {
         format!("{:x}", hasher.finalize())
     }
 
+    /// 将 `cardParamMap` 中的所有值转为字符串（钉钉 API 要求）
+    fn stringify_card_param_map(card_data: &serde_json::Value) -> serde_json::Value {
+        match card_data {
+            serde_json::Value::Object(map) => {
+                let mut out = serde_json::Map::new();
+                for (k, v) in map {
+                    out.insert(
+                        k.clone(),
+                        match v {
+                            serde_json::Value::String(_) => v.clone(),
+                            _ => serde_json::Value::String(v.to_string()),
+                        },
+                    );
+                }
+                serde_json::Value::Object(out)
+            }
+            other => other.clone(),
+        }
+    }
+
     /// 创建并发送卡片（两步：创建 + 投放）
     #[allow(clippy::too_many_arguments)]
     pub async fn create_and_send_card(
@@ -79,11 +99,12 @@ impl CardReplier {
     ) -> crate::Result<String> {
         let access_token = self.token_manager.get_access_token().await?;
         let card_instance_id = Self::gen_card_id(&self.incoming_message);
+        let param_map = Self::stringify_card_param_map(card_data);
 
         let mut create_body = serde_json::json!({
             "cardTemplateId": card_template_id,
             "outTrackId": card_instance_id,
-            "cardData": {"cardParamMap": card_data},
+            "cardData": {"cardParamMap": param_map},
             "callbackType": callback_type,
             "imGroupOpenSpaceModel": {"supportForward": support_forward},
             "imRobotOpenSpaceModel": {"supportForward": support_forward},
@@ -135,11 +156,12 @@ impl CardReplier {
     ) -> crate::Result<String> {
         let access_token = self.token_manager.get_access_token().await?;
         let card_instance_id = Self::gen_card_id(&self.incoming_message);
+        let param_map = Self::stringify_card_param_map(card_data);
 
         let mut body = serde_json::json!({
             "cardTemplateId": card_template_id,
             "outTrackId": card_instance_id,
-            "cardData": {"cardParamMap": card_data},
+            "cardData": {"cardParamMap": param_map},
             "callbackType": callback_type,
             "imGroupOpenSpaceModel": {"supportForward": support_forward},
             "imRobotOpenSpaceModel": {"supportForward": support_forward},
@@ -178,10 +200,11 @@ impl CardReplier {
         extra: Option<&serde_json::Value>,
     ) -> crate::Result<()> {
         let access_token = self.token_manager.get_access_token().await?;
+        let param_map = Self::stringify_card_param_map(card_data);
 
         let mut body = serde_json::json!({
             "outTrackId": card_instance_id,
-            "cardData": {"cardParamMap": card_data},
+            "cardData": {"cardParamMap": param_map},
         });
 
         if let Some(extra) = extra {
