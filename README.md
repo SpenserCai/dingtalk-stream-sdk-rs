@@ -1,5 +1,10 @@
 # DingTalk Stream SDK for Rust
 
+[![Crates.io](https://img.shields.io/crates/v/dingtalk-stream.svg)](https://crates.io/crates/dingtalk-stream)
+[![docs.rs](https://docs.rs/dingtalk-stream/badge.svg)](https://docs.rs/dingtalk-stream)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-%3E%3D1.85.0-orange.svg)](https://www.rust-lang.org)
+
 钉钉 Stream 模式 SDK 的 Rust 实现，完整对齐 Python 版 [dingtalk-stream-sdk-python](https://github.com/open-dingtalk/dingtalk-stream-sdk-python)。
 
 > 对齐的 Python SDK 版本: commit [`6381a7b`](https://github.com/open-dingtalk/dingtalk-stream-sdk-python/commit/6381a7bacb0353e1e0cd425688a02ff785fda44c)

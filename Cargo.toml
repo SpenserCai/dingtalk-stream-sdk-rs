@@ -3,8 +3,13 @@ name = "dingtalk-stream"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
-description = "DingTalk Stream SDK for Rust"
+description = "DingTalk Stream SDK for Rust — WebSocket-based bot messaging, interactive cards, Graph API and event subscription"
 license = "MIT"
+repository = "https://github.com/spensercai/dingtalk-stream-sdk-rs"
+homepage = "https://github.com/spensercai/dingtalk-stream-sdk-rs"
+documentation = "https://docs.rs/dingtalk-stream"
+keywords = ["dingtalk", "chatbot", "websocket", "stream", "async"]
+categories = ["api-bindings", "asynchronous", "web-programming::websocket"]
 
 [dependencies]
 tokio = { version = "1.50", features = ["full"] }
