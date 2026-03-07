@@ -1,0 +1,26 @@
+[package]
+name = "dingtalk-stream"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+description = "DingTalk Stream SDK for Rust"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.50", features = ["full"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
+reqwest = { version = "0.13", features = ["json", "multipart"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_repr = "0.1"
+tracing = "0.1"
+thiserror = "2.0"
+uuid = { version = "1.22", features = ["v4"] }
+sha2 = "0.10"
+futures-util = { version = "0.3", features = ["sink"] }
+url = "2.5"
+async-trait = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio = { version = "1.50", features = ["full", "test-util"] }

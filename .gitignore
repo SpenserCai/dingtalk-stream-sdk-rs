@@ -1,0 +1,25 @@
+# Build artifacts
+/target/
+
+# Cargo lock for library crates
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Secrets & credentials
+secrets.txt
+examples/secret.toml
+
+# Development-only directories
+/dev_docs/
+/tmps/
+/venv/
+
+# Test artifacts
+*.log
