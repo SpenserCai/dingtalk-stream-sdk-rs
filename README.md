@@ -25,7 +25,7 @@
 
 ```toml
 [dependencies]
-dingtalk-stream = { path = "." }
+dingtalk-stream = "0.1"
 ```
 
 最小示例：
