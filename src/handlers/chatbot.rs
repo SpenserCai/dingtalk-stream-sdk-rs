@@ -200,6 +200,11 @@ impl ChatbotReplier {
         AICardReplier::new(self.make_card_replier(incoming_message))
     }
 
+    /// 创建 AI 卡片回复器，用于自定义模板场景
+    pub fn create_ai_card_replier(&self, incoming_message: &ChatbotMessage) -> AICardReplier {
+        self.make_ai_card_replier(incoming_message)
+    }
+
     /// 回复 Markdown 卡片
     pub async fn reply_markdown_card(
         &self,
