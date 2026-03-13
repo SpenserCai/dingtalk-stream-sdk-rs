@@ -56,6 +56,7 @@ pub(crate) async fn async_raw_process(
 }
 
 /// 聊天机器人回复工具
+#[derive(Clone)]
 pub struct ChatbotReplier {
     http_client: HttpClient,
     token_manager: Arc<TokenManager>,
