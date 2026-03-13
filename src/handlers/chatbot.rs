@@ -387,6 +387,41 @@ impl ChatbotReplier {
             .await
     }
 
+    // ── Rust SDK exclusive: OTO message API ──────────────────────────
+    // NOTE: This method is Rust-SDK-only and does NOT exist in the
+    // official Python SDK.  When syncing features from the Python SDK,
+    // do NOT remove this section.
+
+    /// 通过 OpenAPI 向指定用户发送单聊消息（OTO = One-To-One）。
+    ///
+    /// 对应钉钉 OpenAPI：`POST /v1.0/robot/oToMessages/batchSend`
+    ///
+    /// # Arguments
+    /// * `user_id`  – 接收者的 userId（即 staffId）
+    /// * `msg_key`  – 消息模板 key，如 `"sampleFile"`, `"sampleText"` 等
+    /// * `msg_param` – 消息模板参数的 JSON 字符串
+    pub async fn send_oto_message(
+        &self,
+        user_id: &str,
+        msg_key: &str,
+        msg_param: &str,
+    ) -> crate::Result<serde_json::Value> {
+        let access_token = self.token_manager.get_access_token().await?;
+        let body = serde_json::json!({
+            "robotCode": self.client_id,
+            "userIds": [user_id],
+            "msgKey": msg_key,
+            "msgParam": msg_param,
+        });
+        let url = format!(
+            "{}/v1.0/robot/oToMessages/batchSend",
+            self.http_client.openapi_endpoint()
+        );
+        self.http_client
+            .post_json(&url, &body, Some(&access_token))
+            .await
+    }
+
     /// 设置离线提示词
     pub async fn set_off_duty_prompt(
         &self,
