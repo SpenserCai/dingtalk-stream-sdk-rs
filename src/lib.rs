@@ -38,8 +38,8 @@ pub use handlers::system::SystemHandler;
 // Messages
 pub use messages::card_callback::{CARD_CALLBACK_ROUTER_TOPIC, CardCallbackMessage};
 pub use messages::chatbot::{
-    AtUser, ChatbotMessage, ConversationMessage, HostingContext, ImageContent, RichTextContent,
-    TextContent,
+    AtUser, AudioContent, ChatbotMessage, ConversationMessage, HostingContext, ImageContent,
+    RichTextContent, TextContent,
 };
 pub use messages::frames::{AckMessage, Headers, MessageBody, StreamMessage};
 pub use messages::graph::{GraphMessage, GraphRequest, GraphResponse, RequestLine, StatusLine};

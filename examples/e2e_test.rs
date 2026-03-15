@@ -15,6 +15,7 @@
 //!   carousel      → 轮播图卡片
 //!   offduty       → 设置下班自动回复
 //!   info          → 显示消息详情 (调试用)
+//!   [语音消息]    → 回复语音识别结果 (仅单聊，Rust SDK 独有)
 //!
 //! 卡片回调:
 //!   点击带按钮的卡片 → 控制台打印回调详情
@@ -68,19 +69,37 @@ impl CallbackHandler for ChatbotTestHandler {
             }
         };
 
-        let text = incoming
-            .text
-            .as_ref()
-            .and_then(|t| t.content.as_deref())
-            .unwrap_or("")
+        let text = ChatbotReplier::extract_text(&incoming)
+            .and_then(|v| v.into_iter().next())
+            .unwrap_or_default()
             .trim()
             .to_owned();
 
+        let is_audio = incoming.message_type.as_deref() == Some("audio");
         let conv_type = incoming.conversation_type.as_deref().unwrap_or("unknown");
         println!(
-            "[Chatbot] text='{text}', type={conv_type}, sender={:?}",
+            "[Chatbot] text='{text}', type={conv_type}, sender={:?}, audio={is_audio}",
             incoming.sender_nick
         );
+
+        // Rust SDK exclusive: echo back audio recognition result
+        if is_audio {
+            let ac = incoming.audio_content.as_ref();
+            let duration_info = ac
+                .and_then(|a| a.duration)
+                .map(|ms| format!(" (时长 {:.1}s)", ms as f64 / 1000.0))
+                .unwrap_or_default();
+            let reply = format!(
+                "🎤 语音识别结果{duration_info}:\n\n{}",
+                if text.is_empty() {
+                    "（未识别到内容）"
+                } else {
+                    &text
+                },
+            );
+            let _ = self.replier.reply_text(&reply, &incoming).await;
+            return (AckMessage::STATUS_OK, "OK".to_owned());
+        }
 
         let result = self.handle_command(&text, &incoming).await;
         match &result {
@@ -286,7 +305,8 @@ impl ChatbotTestHandler {
                      | robot_code | {:?} |\n\
                      | is_admin | {:?} |\n\
                      | at_users | {:?} |\n\
-                     | extracted_texts | {:?} |",
+                     | extracted_texts | {:?} |\n\
+                     | audio_content | {:?} |",
                     incoming.message_type,
                     incoming.sender_nick,
                     incoming.sender_id,
@@ -299,6 +319,7 @@ impl ChatbotTestHandler {
                     incoming.is_admin,
                     incoming.at_users,
                     texts,
+                    incoming.audio_content,
                 );
                 self.replier
                     .reply_markdown("消息详情", &info, incoming)
@@ -321,7 +342,8 @@ impl ChatbotTestHandler {
                          | `aibuttons` | AI 卡片 + 按钮 |\n\
                          | `carousel` | 轮播图卡片 |\n\
                          | `offduty` | 设置下班自动回复 |\n\
-                         | `info` | 显示消息详情 |",
+                         | `info` | 显示消息详情 |\n\
+                         | 🎤 语音 | 回复识别结果 (仅单聊) |",
                         incoming,
                     )
                     .await?;
@@ -409,7 +431,7 @@ fn main() {
     println!("║ Commands:                                ║");
     println!("║   ping / echo / md / card / buttons      ║");
     println!("║   ai / aibuttons / carousel / offduty    ║");
-    println!("║   info                                   ║");
+    println!("║   info / 🎤 voice (1:1 only)             ║");
     println!("╠══════════════════════════════════════════╣");
     println!("║ Also listening:                          ║");
     println!("║   Card callbacks, Events                 ║");

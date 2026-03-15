@@ -81,6 +81,13 @@ pub struct ChatbotMessage {
     /// 富文本内容（从 content 字段解析，msgtype=richText 时）
     #[serde(skip)]
     pub rich_text_content: Option<RichTextContent>,
+    // ── Rust SDK exclusive: audio message support ────────────────────
+    // NOTE: This field is Rust-SDK-only and does NOT exist in the
+    // official Python SDK.  When syncing features from the Python SDK,
+    // do NOT remove this field.
+    /// 语音内容（从 content 字段解析，msgtype=audio 时，仅单聊支持）
+    #[serde(skip)]
+    pub audio_content: Option<AudioContent>,
     /// 扩展字段
     #[serde(flatten)]
     pub extensions: HashMap<String, serde_json::Value>,
@@ -106,6 +113,10 @@ impl ChatbotMessage {
                     "richText" => {
                         msg.rich_text_content = serde_json::from_value(content.clone()).ok();
                     }
+                    // Rust SDK exclusive: audio message parsing
+                    "audio" => {
+                        msg.audio_content = serde_json::from_value(content.clone()).ok();
+                    }
                     _ => {}
                 }
             }
@@ -128,6 +139,12 @@ impl ChatbotMessage {
                     .filter_map(|item| item.get("text").and_then(|v| v.as_str()).map(String::from))
                     .collect()
             }),
+            // Rust SDK exclusive: extract recognition text from audio messages
+            Some("audio") => self
+                .audio_content
+                .as_ref()
+                .and_then(|ac| ac.recognition.clone())
+                .map(|r| vec![r]),
             _ => None,
         }
     }
@@ -202,6 +219,27 @@ pub struct ImageContent {
     /// 下载码
     #[serde(rename = "downloadCode", skip_serializing_if = "Option::is_none")]
     pub download_code: Option<String>,
+}
+
+// ── Rust SDK exclusive: AudioContent ─────────────────────────────────
+// NOTE: This struct is Rust-SDK-only and does NOT exist in the official
+// Python SDK.  When syncing features from the Python SDK, do NOT remove
+// this struct.
+
+/// 语音消息内容（仅单聊场景下机器人可接收）
+///
+/// 钉钉服务端会自动进行语音识别（STT），识别结果通过 `recognition` 字段返回。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AudioContent {
+    /// 语音识别后的文本
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recognition: Option<String>,
+    /// 语音文件下载码
+    #[serde(rename = "downloadCode", skip_serializing_if = "Option::is_none")]
+    pub download_code: Option<String>,
+    /// 语音时长（毫秒）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<i64>,
 }
 
 /// 富文本内容
@@ -371,5 +409,50 @@ mod tests {
         assert_eq!(user.dingtalk_id.as_deref(), Some("dt_001"));
         assert_eq!(user.staff_id.as_deref(), Some("staff_001"));
         assert!(user.extensions.contains_key("extra"));
+    }
+
+    // ── Rust SDK exclusive: audio message tests ──────────────────────
+
+    #[test]
+    fn test_chatbot_message_audio() {
+        let json = serde_json::json!({
+            "msgtype": "audio",
+            "content": {
+                "duration": 4000,
+                "downloadCode": "dc_audio_001",
+                "recognition": "钉钉，让进步发生"
+            },
+            "senderId": "user_001",
+            "senderStaffId": "staff_001",
+            "conversationType": "1",
+            "msgId": "msg_audio_001"
+        });
+        let msg = ChatbotMessage::from_value(&json).unwrap();
+        assert_eq!(msg.message_type.as_deref(), Some("audio"));
+        let ac = msg.audio_content.as_ref().unwrap();
+        assert_eq!(ac.recognition.as_deref(), Some("钉钉，让进步发生"));
+        assert_eq!(ac.download_code.as_deref(), Some("dc_audio_001"));
+        assert_eq!(ac.duration, Some(4000));
+        // get_text_list should return recognition text
+        let texts = msg.get_text_list().unwrap();
+        assert_eq!(texts, vec!["钉钉，让进步发生"]);
+    }
+
+    #[test]
+    fn test_chatbot_message_audio_no_recognition() {
+        let json = serde_json::json!({
+            "msgtype": "audio",
+            "content": {
+                "duration": 2000,
+                "downloadCode": "dc_audio_002"
+            },
+            "senderId": "user_001",
+            "msgId": "msg_audio_002"
+        });
+        let msg = ChatbotMessage::from_value(&json).unwrap();
+        assert_eq!(msg.message_type.as_deref(), Some("audio"));
+        assert!(msg.audio_content.is_some());
+        // No recognition → get_text_list returns None
+        assert!(msg.get_text_list().is_none());
     }
 }
