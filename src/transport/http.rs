@@ -144,6 +144,40 @@ impl HttpClient {
         Ok(bytes.to_vec())
     }
 
+    /// GET 请求，返回字节内容（带大小限制）
+    ///
+    /// 先检查 `Content-Length` 响应头，超过 `max_size` 则直接拒绝；
+    /// 下载过程中累计检查已读字节数，超限则中止。
+    pub async fn get_bytes_with_limit(&self, url: &str, max_size: u64) -> Result<Vec<u8>> {
+        use futures_util::StreamExt;
+
+        let resp = self.client.get(url).send().await?;
+        resp.error_for_status_ref()
+            .map_err(|e| Error::Http(e.without_url()))?;
+
+        if let Some(len) = resp.content_length() {
+            if len > max_size {
+                return Err(Error::Handler(format!(
+                    "file too large: {len} bytes (limit: {max_size})"
+                )));
+            }
+        }
+
+        let mut stream = resp.bytes_stream();
+        let mut buf = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk?;
+            buf.extend_from_slice(&chunk);
+            if buf.len() as u64 > max_size {
+                return Err(Error::Handler(format!(
+                    "download exceeded limit: {} bytes (limit: {max_size})",
+                    buf.len()
+                )));
+            }
+        }
+        Ok(buf)
+    }
+
     /// 上传文件到钉钉
     pub async fn upload_file(
         &self,

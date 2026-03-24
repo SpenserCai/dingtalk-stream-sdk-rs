@@ -16,6 +16,8 @@
 //!   offduty       → 设置下班自动回复
 //!   info          → 显示消息详情 (调试用)
 //!   [语音消息]    → 回复语音识别结果 (仅单聊，Rust SDK 独有)
+//!   [文件消息]    → 回复文件信息 (仅单聊，Rust SDK 独有)
+//!   [视频消息]    → 回复视频信息 (仅单聊，Rust SDK 独有)
 //!
 //! 卡片回调:
 //!   点击带按钮的卡片 → 控制台打印回调详情
@@ -76,9 +78,10 @@ impl CallbackHandler for ChatbotTestHandler {
             .to_owned();
 
         let is_audio = incoming.message_type.as_deref() == Some("audio");
+        let msg_type = incoming.message_type.as_deref().unwrap_or("unknown");
         let conv_type = incoming.conversation_type.as_deref().unwrap_or("unknown");
         println!(
-            "[Chatbot] text='{text}', type={conv_type}, sender={:?}, audio={is_audio}",
+            "[Chatbot] text='{text}', msgtype={msg_type}, conv={conv_type}, sender={:?}",
             incoming.sender_nick
         );
 
@@ -97,6 +100,40 @@ impl CallbackHandler for ChatbotTestHandler {
                     &text
                 },
             );
+            let _ = self.replier.reply_text(&reply, &incoming).await;
+            return (AckMessage::STATUS_OK, "OK".to_owned());
+        }
+
+        // Rust SDK exclusive: echo back file info
+        if msg_type == "file" {
+            let fc = incoming.file_content.as_ref();
+            let name = fc.and_then(|f| f.file_name.as_deref()).unwrap_or("unknown");
+            let size = fc
+                .and_then(|f| f.file_size)
+                .map(|s| format!("{:.1}KB", s as f64 / 1024.0))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let dc = fc
+                .and_then(|f| f.download_code.as_deref())
+                .unwrap_or("none");
+            let reply = format!("📄 收到文件\n\n文件名: {name}\n大小: {size}\n下载码: {dc}");
+            let _ = self.replier.reply_text(&reply, &incoming).await;
+            return (AckMessage::STATUS_OK, "OK".to_owned());
+        }
+
+        // Rust SDK exclusive: echo back video info
+        if msg_type == "video" {
+            let vc = incoming.video_content.as_ref();
+            let duration = vc
+                .and_then(|v| v.duration)
+                .map(|ms| format!("{:.1}s", ms as f64 / 1000.0))
+                .unwrap_or_else(|| "unknown".to_owned());
+            let vtype = vc
+                .and_then(|v| v.video_type.as_deref())
+                .unwrap_or("unknown");
+            let dc = vc
+                .and_then(|v| v.download_code.as_deref())
+                .unwrap_or("none");
+            let reply = format!("🎬 收到视频\n\n时长: {duration}\n类型: {vtype}\n下载码: {dc}");
             let _ = self.replier.reply_text(&reply, &incoming).await;
             return (AckMessage::STATUS_OK, "OK".to_owned());
         }
@@ -306,7 +343,9 @@ impl ChatbotTestHandler {
                      | is_admin | {:?} |\n\
                      | at_users | {:?} |\n\
                      | extracted_texts | {:?} |\n\
-                     | audio_content | {:?} |",
+                     | audio_content | {:?} |\n\
+                     | file_content | {:?} |\n\
+                     | video_content | {:?} |",
                     incoming.message_type,
                     incoming.sender_nick,
                     incoming.sender_id,
@@ -320,6 +359,8 @@ impl ChatbotTestHandler {
                     incoming.at_users,
                     texts,
                     incoming.audio_content,
+                    incoming.file_content,
+                    incoming.video_content,
                 );
                 self.replier
                     .reply_markdown("消息详情", &info, incoming)
@@ -343,7 +384,9 @@ impl ChatbotTestHandler {
                          | `carousel` | 轮播图卡片 |\n\
                          | `offduty` | 设置下班自动回复 |\n\
                          | `info` | 显示消息详情 |\n\
-                         | 🎤 语音 | 回复识别结果 (仅单聊) |",
+                         | 🎤 语音 | 回复识别结果 (仅单聊) |\n\
+                         | 📄 文件 | 回复文件信息 (仅单聊) |\n\
+                         | 🎬 视频 | 回复视频信息 (仅单聊) |",
                         incoming,
                     )
                     .await?;
@@ -431,7 +474,7 @@ fn main() {
     println!("║ Commands:                                ║");
     println!("║   ping / echo / md / card / buttons      ║");
     println!("║   ai / aibuttons / carousel / offduty    ║");
-    println!("║   info / 🎤 voice (1:1 only)             ║");
+    println!("║   info / 🎤 voice / 📄 file / 🎬 video   ║");
     println!("╠══════════════════════════════════════════╣");
     println!("║ Also listening:                          ║");
     println!("║   Card callbacks, Events                 ║");

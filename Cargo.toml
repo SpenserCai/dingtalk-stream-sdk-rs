@@ -1,6 +1,6 @@
 [package]
 name = "dingtalk-stream"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 rust-version = "1.85.0"
 description = "DingTalk Stream SDK for Rust — WebSocket-based bot messaging, interactive cards, Graph API and event subscription"
@@ -14,7 +14,7 @@ categories = ["api-bindings", "asynchronous", "web-programming::websocket"]
 [dependencies]
 tokio = { version = "1.50", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
-reqwest = { version = "0.13", features = ["json", "multipart"] }
+reqwest = { version = "0.13", features = ["json", "multipart", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_repr = "0.1"

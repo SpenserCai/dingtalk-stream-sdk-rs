@@ -422,6 +422,28 @@ impl ChatbotReplier {
             .await
     }
 
+    // ── Rust SDK exclusive: download helpers ─────────────────────────
+    // NOTE: These methods are Rust-SDK-only and do NOT exist in the
+    // official Python SDK.  When syncing features from the Python SDK,
+    // do NOT remove this section.
+
+    /// 下载文件字节内容（无大小限制）
+    pub async fn download_bytes(&self, url: &str) -> crate::Result<Vec<u8>> {
+        self.http_client.get_bytes(url).await
+    }
+
+    /// 下载文件字节内容（带大小限制）
+    ///
+    /// 先检查响应的 `Content-Length` 头，超过 `max_size` 则直接拒绝；
+    /// 下载过程中累计检查已读字节数，超限则中止。
+    pub async fn download_bytes_with_limit(
+        &self,
+        url: &str,
+        max_size: u64,
+    ) -> crate::Result<Vec<u8>> {
+        self.http_client.get_bytes_with_limit(url, max_size).await
+    }
+
     /// 设置离线提示词
     pub async fn set_off_duty_prompt(
         &self,
