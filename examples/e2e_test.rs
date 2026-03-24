@@ -3,6 +3,7 @@
 //! 配置文件: examples/secret.toml (参考 examples/secret.example.toml)
 //!
 //! 运行: cargo run --example e2e_test
+//! 带下载测试: cargo run --example e2e_test -- --download-dir /tmp/dingtalk_downloads
 //!
 //! 聊天机器人命令 (私聊或群聊 @机器人):
 //!   ping          → 回复 pong (文本)
@@ -16,6 +17,7 @@
 //!   offduty       → 设置下班自动回复
 //!   info          → 显示消息详情 (调试用)
 //!   [语音消息]    → 回复语音识别结果 (仅单聊，Rust SDK 独有)
+//!   [图片消息]    → 回复图片信息 (Rust SDK 独有)
 //!   [文件消息]    → 回复文件信息 (仅单聊，Rust SDK 独有)
 //!   [视频消息]    → 回复视频信息 (仅单聊，Rust SDK 独有)
 //!
@@ -52,10 +54,20 @@ fn load_config(path: &str) -> HashMap<String, String> {
     map
 }
 
+fn chrono_timestamp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    ts.to_string()
+}
+
 // ─── 聊天机器人 Handler ─────────────────────────────────────────────────────
 
 struct ChatbotTestHandler {
     replier: ChatbotReplier,
+    download_dir: Option<String>,
 }
 
 #[async_trait]
@@ -92,7 +104,7 @@ impl CallbackHandler for ChatbotTestHandler {
                 .and_then(|a| a.duration)
                 .map(|ms| format!(" (时长 {:.1}s)", ms as f64 / 1000.0))
                 .unwrap_or_default();
-            let reply = format!(
+            let mut reply = format!(
                 "🎤 语音识别结果{duration_info}:\n\n{}",
                 if text.is_empty() {
                     "（未识别到内容）"
@@ -100,6 +112,9 @@ impl CallbackHandler for ChatbotTestHandler {
                     &text
                 },
             );
+            if let Some(dir) = &self.download_dir {
+                reply += &self.try_download(&incoming, dir).await;
+            }
             let _ = self.replier.reply_text(&reply, &incoming).await;
             return (AckMessage::STATUS_OK, "OK".to_owned());
         }
@@ -108,14 +123,28 @@ impl CallbackHandler for ChatbotTestHandler {
         if msg_type == "file" {
             let fc = incoming.file_content.as_ref();
             let name = fc.and_then(|f| f.file_name.as_deref()).unwrap_or("unknown");
-            let size = fc
-                .and_then(|f| f.file_size)
-                .map(|s| format!("{:.1}KB", s as f64 / 1024.0))
-                .unwrap_or_else(|| "unknown".to_owned());
             let dc = fc
                 .and_then(|f| f.download_code.as_deref())
                 .unwrap_or("none");
-            let reply = format!("📄 收到文件\n\n文件名: {name}\n大小: {size}\n下载码: {dc}");
+            let mut reply = format!("📄 收到文件\n\n文件名: {name}\n下载码: {dc}");
+            if let Some(dir) = &self.download_dir {
+                reply += &self.try_download(&incoming, dir).await;
+            }
+            let _ = self.replier.reply_text(&reply, &incoming).await;
+            return (AckMessage::STATUS_OK, "OK".to_owned());
+        }
+
+        // Rust SDK exclusive: echo back picture info
+        if msg_type == "picture" {
+            let dc = incoming
+                .image_content
+                .as_ref()
+                .and_then(|ic| ic.download_code.as_deref())
+                .unwrap_or("none");
+            let mut reply = format!("🖼️ 收到图片\n\n下载码: {dc}");
+            if let Some(dir) = &self.download_dir {
+                reply += &self.try_download(&incoming, dir).await;
+            }
             let _ = self.replier.reply_text(&reply, &incoming).await;
             return (AckMessage::STATUS_OK, "OK".to_owned());
         }
@@ -133,7 +162,10 @@ impl CallbackHandler for ChatbotTestHandler {
             let dc = vc
                 .and_then(|v| v.download_code.as_deref())
                 .unwrap_or("none");
-            let reply = format!("🎬 收到视频\n\n时长: {duration}\n类型: {vtype}\n下载码: {dc}");
+            let mut reply = format!("🎬 收到视频\n\n时长: {duration}\n类型: {vtype}\n下载码: {dc}");
+            if let Some(dir) = &self.download_dir {
+                reply += &self.try_download(&incoming, dir).await;
+            }
             let _ = self.replier.reply_text(&reply, &incoming).await;
             return (AckMessage::STATUS_OK, "OK".to_owned());
         }
@@ -149,6 +181,58 @@ impl CallbackHandler for ChatbotTestHandler {
 }
 
 impl ChatbotTestHandler {
+    /// 尝试下载媒体文件到指定目录，返回追加到回复的文本
+    async fn try_download(&self, incoming: &ChatbotMessage, dir: &str) -> String {
+        let codes = incoming.get_all_download_codes();
+        if codes.is_empty() {
+            return String::new();
+        }
+        let mut result = String::from("\n\n── 下载测试 ──");
+        for (media_type, download_code) in &codes {
+            match self.replier.get_image_download_url(download_code).await {
+                Ok(url) => {
+                    let start = std::time::Instant::now();
+                    match self.replier.download_bytes(&url).await {
+                        Ok(bytes) => {
+                            let elapsed = start.elapsed();
+                            let ext = match media_type.as_str() {
+                                "picture" => "png",
+                                "audio" => "ogg",
+                                "video" => "mp4",
+                                "file" => incoming
+                                    .file_content
+                                    .as_ref()
+                                    .and_then(|fc| fc.file_name.as_deref())
+                                    .and_then(|n| n.rsplit('.').next())
+                                    .unwrap_or("bin"),
+                                _ => "bin",
+                            };
+                            let filename = format!("{}_{}.{ext}", media_type, chrono_timestamp());
+                            let path = format!("{dir}/{filename}");
+                            match std::fs::write(&path, &bytes) {
+                                Ok(()) => {
+                                    let size_kb = bytes.len() as f64 / 1024.0;
+                                    result += &format!(
+                                        "\n✅ {media_type}: {size_kb:.1}KB, {elapsed:.1?} → {path}"
+                                    );
+                                    println!(
+                                        "[Download] {media_type} saved: {path} ({size_kb:.1}KB, {elapsed:.1?})"
+                                    );
+                                }
+                                Err(e) => {
+                                    result += &format!("\n❌ {media_type}: 写入失败: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => result += &format!("\n❌ {media_type}: 下载失败: {e}"),
+                    }
+                }
+                Err(e) => result += &format!("\n❌ {media_type}: 获取URL失败: {e}"),
+            }
+        }
+        result
+    }
+
     async fn handle_command(
         &self,
         text: &str,
@@ -385,6 +469,7 @@ impl ChatbotTestHandler {
                          | `offduty` | 设置下班自动回复 |\n\
                          | `info` | 显示消息详情 |\n\
                          | 🎤 语音 | 回复识别结果 (仅单聊) |\n\
+                         | 🖼️ 图片 | 回复图片信息 |\n\
                          | 📄 文件 | 回复文件信息 (仅单聊) |\n\
                          | 🎬 视频 | 回复视频信息 (仅单聊) |",
                         incoming,
@@ -458,6 +543,17 @@ fn main() {
         )
         .init();
 
+    // 解析 --download-dir 参数
+    let args: Vec<String> = std::env::args().collect();
+    let download_dir = args
+        .windows(2)
+        .find(|w| w[0] == "--download-dir")
+        .map(|w| w[1].clone());
+    if let Some(dir) = &download_dir {
+        std::fs::create_dir_all(dir).expect("Failed to create download directory");
+        println!("[Config] Download dir: {dir}");
+    }
+
     let config = load_config("examples/secret.toml");
     let client_id = config
         .get("client_id")
@@ -474,10 +570,16 @@ fn main() {
     println!("║ Commands:                                ║");
     println!("║   ping / echo / md / card / buttons      ║");
     println!("║   ai / aibuttons / carousel / offduty    ║");
-    println!("║   info / 🎤 voice / 📄 file / 🎬 video   ║");
+    println!("║   info / 🎤 voice / 🖼️ pic / 📄 file     ║");
+    println!("║   🎬 video                               ║");
     println!("╠══════════════════════════════════════════╣");
     println!("║ Also listening:                          ║");
     println!("║   Card callbacks, Events                 ║");
+    println!("╠══════════════════════════════════════════╣");
+    println!(
+        "║ Download: {:<30}║",
+        download_dir.as_deref().unwrap_or("disabled")
+    );
     println!("╚══════════════════════════════════════════╝");
 
     let credential = Credential::new(client_id, client_secret);
@@ -487,7 +589,13 @@ fn main() {
 
     let mut client = DingTalkStreamClient::builder(credential)
         // 聊天机器人消息
-        .register_callback_handler(ChatbotMessage::TOPIC, ChatbotTestHandler { replier })
+        .register_callback_handler(
+            ChatbotMessage::TOPIC,
+            ChatbotTestHandler {
+                replier,
+                download_dir,
+            },
+        )
         // 卡片交互回调
         .register_callback_handler(CARD_CALLBACK_ROUTER_TOPIC, CardCallbackTestHandler)
         // 事件订阅

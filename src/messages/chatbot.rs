@@ -340,9 +340,6 @@ pub struct FileContent {
     /// 文件名
     #[serde(rename = "fileName", skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
-    /// 文件大小（字节）
-    #[serde(rename = "fileSize", skip_serializing_if = "Option::is_none")]
-    pub file_size: Option<i64>,
 }
 
 // ── Rust SDK exclusive: VideoContent ─────────────────────────────────
@@ -586,8 +583,7 @@ mod tests {
             "msgtype": "file",
             "content": {
                 "downloadCode": "dc_file_001",
-                "fileName": "report.pdf",
-                "fileSize": 1_048_576
+                "fileName": "report.pdf"
             },
             "senderId": "user_001",
             "conversationType": "1",
@@ -598,7 +594,6 @@ mod tests {
         let fc = msg.file_content.as_ref().unwrap();
         assert_eq!(fc.download_code.as_deref(), Some("dc_file_001"));
         assert_eq!(fc.file_name.as_deref(), Some("report.pdf"));
-        assert_eq!(fc.file_size, Some(1_048_576));
     }
 
     #[test]
@@ -613,7 +608,6 @@ mod tests {
         let fc = msg.file_content.as_ref().unwrap();
         assert_eq!(fc.download_code.as_deref(), Some("dc_file_002"));
         assert!(fc.file_name.is_none());
-        assert!(fc.file_size.is_none());
     }
 
     // ── Rust SDK exclusive: video message tests ──────────────────────
