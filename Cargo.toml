@@ -10,6 +10,7 @@ homepage = "https://github.com/spensercai/dingtalk-stream-sdk-rs"
 documentation = "https://docs.rs/dingtalk-stream"
 keywords = ["dingtalk", "chatbot", "websocket", "stream", "async"]
 categories = ["api-bindings", "asynchronous", "web-programming::websocket"]
+exclude = ["dingtalk-stream-sdk-python/", "dev_docs/"]
 
 [dependencies]
 tokio = { version = "1.50", features = ["full"] }
