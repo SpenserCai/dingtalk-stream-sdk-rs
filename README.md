@@ -91,7 +91,12 @@ src/
    cargo run --example e2e_test
    ```
 
-3. 通过钉钉向机器人发送消息测试：
+3. 带媒体下载测试：
+   ```bash
+   cargo run --example e2e_test -- --download-dir /tmp/dingtalk_downloads
+   ```
+
+4. 通过钉钉向机器人发送消息测试：
    - `ping` → 回复 pong
    - `echo <text>` → 回声
    - `card` → 发送 Markdown 卡片
@@ -105,6 +110,53 @@ src/
 | 类继承 | Trait + 组合 | Rust 惯用模式 |
 | ThreadPoolExecutor | tokio::spawn | 更高效的异步调度 |
 | dict 动态类型 | 强类型 struct + serde | 编译期类型安全 |
+
+## Rust SDK 独有功能
+
+以下功能为 Rust SDK 独有，Python SDK 中不存在。同步 Python SDK 时请勿删除（代码中均有 `Rust SDK exclusive` 标注）。
+
+### 扩展消息类型
+
+Rust SDK 支持解析钉钉机器人可接收的全部 6 种消息类型，Python SDK 仅支持 text / richText / picture：
+
+| 消息类型 | 结构体 | 场景限制 |
+|---------|--------|---------|
+| audio 语音 | `AudioContent` | 仅单聊 |
+| file 文件 | `FileContent` | 仅单聊 |
+| video 视频 | `VideoContent` | 仅单聊 |
+
+```rust
+let msg = ChatbotMessage::from_value(&json)?;
+if let Some(fc) = &msg.file_content {
+    println!("文件名: {:?}, 下载码: {:?}", fc.file_name, fc.download_code);
+}
+```
+
+### 统一下载码提取
+
+`get_all_download_codes()` 一次性获取消息中所有媒体的下载码，覆盖 picture / richText 图片 / audio / file / video：
+
+```rust
+for (media_type, download_code) in msg.get_all_download_codes() {
+    let url = replier.get_image_download_url(&download_code).await?;
+    let bytes = replier.download_bytes(&url).await?;
+}
+```
+
+### 文件下载
+
+| 方法 | 说明 |
+|------|------|
+| `download_bytes(url)` | 下载文件字节内容 |
+| `download_bytes_with_limit(url, max_size)` | 带大小限制的流式下载（Content-Length 预检 + 累计检查） |
+
+### 主动单聊消息
+
+`send_oto_message()` 通过 OpenAPI 向指定用户发送单聊消息（对应 `POST /v1.0/robot/oToMessages/batchSend`）：
+
+```rust
+replier.send_oto_message(user_id, "sampleText", r#"{"content":"hello"}"#).await?;
+```
 
 ## 环境要求
 
