@@ -144,7 +144,11 @@ impl DingTalkStreamClient {
 
         tracing::info!(endpoint = %endpoint, "connecting to WebSocket");
 
-        let (ws_stream, _) = connect_async(&uri).await?;
+        let (ws_stream, _) =
+            tokio::time::timeout(std::time::Duration::from_secs(30), connect_async(&uri))
+                .await
+                .map_err(|_| Error::Connection("WebSocket connect timeout".to_string()))?
+                .map_err(Error::WebSocket)?;
         let (write, read) = ws_stream.split();
 
         let write = Arc::new(tokio::sync::Mutex::new(write));
@@ -290,6 +294,8 @@ pub struct ClientBuilder {
     event_handler: Option<Arc<dyn EventHandler>>,
     callback_handlers: HashMap<String, CallbackEntry>,
     system_handler: Option<Arc<dyn SystemHandler>>,
+    connect_timeout_secs: Option<u64>,
+    request_timeout_secs: Option<u64>,
 }
 
 impl ClientBuilder {
@@ -300,6 +306,8 @@ impl ClientBuilder {
             event_handler: None,
             callback_handlers: HashMap::new(),
             system_handler: None,
+            connect_timeout_secs: None,
+            request_timeout_secs: None,
         }
     }
 
@@ -337,9 +345,24 @@ impl ClientBuilder {
         self
     }
 
+    /// 设置 HTTP 连接超时（秒），默认 10s
+    pub fn connect_timeout_secs(mut self, secs: u64) -> Self {
+        self.connect_timeout_secs = Some(secs);
+        self
+    }
+
+    /// 设置 HTTP 请求超时（秒），默认 30s
+    pub fn request_timeout_secs(mut self, secs: u64) -> Self {
+        self.request_timeout_secs = Some(secs);
+        self
+    }
+
     /// 构建客户端
     pub fn build(self) -> DingTalkStreamClient {
-        let http_client = HttpClient::new();
+        let http_client = match (self.connect_timeout_secs, self.request_timeout_secs) {
+            (None, None) => HttpClient::new(),
+            (ct, rt) => HttpClient::with_timeout(ct.unwrap_or(10), rt.unwrap_or(30)),
+        };
         let token_manager = Arc::new(TokenManager::new(
             self.credential.clone(),
             http_client.clone(),

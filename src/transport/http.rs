@@ -8,6 +8,10 @@ use url::form_urlencoded;
 const DEFAULT_OPENAPI_ENDPOINT: &str = "https://api.dingtalk.com";
 /// 文件上传端点
 const UPLOAD_ENDPOINT: &str = "https://oapi.dingtalk.com";
+/// 默认连接超时（秒）
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 10;
+/// 默认请求超时（秒）
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// HTTP 客户端
 #[derive(Clone)]
@@ -17,13 +21,24 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    /// 创建新的 HTTP 客户端
+    /// 创建新的 HTTP 客户端（使用默认超时：连接 10s，请求 30s）
     pub fn new() -> Self {
+        Self::with_timeout(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_REQUEST_TIMEOUT_SECS)
+    }
+
+    /// 创建带自定义超时的 HTTP 客户端
+    pub fn with_timeout(connect_timeout_secs: u64, request_timeout_secs: u64) -> Self {
         let openapi_endpoint = std::env::var("DINGTALK_OPENAPI_ENDPOINT")
             .unwrap_or_else(|_| DEFAULT_OPENAPI_ENDPOINT.to_owned());
-
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
+            .timeout(std::time::Duration::from_secs(request_timeout_secs))
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
-            client: reqwest::Client::new(),
+            client,
             openapi_endpoint,
         }
     }
@@ -137,7 +152,12 @@ impl HttpClient {
 
     /// GET 请求，返回字节内容
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>> {
-        let resp = self.client.get(url).send().await?;
+        let resp = self
+            .client
+            .get(url)
+            .timeout(std::time::Duration::from_secs(300))
+            .send()
+            .await?;
         resp.error_for_status_ref()
             .map_err(|e| Error::Http(e.without_url()))?;
         let bytes = resp.bytes().await?;
@@ -151,7 +171,12 @@ impl HttpClient {
     pub async fn get_bytes_with_limit(&self, url: &str, max_size: u64) -> Result<Vec<u8>> {
         use futures_util::StreamExt;
 
-        let resp = self.client.get(url).send().await?;
+        let resp = self
+            .client
+            .get(url)
+            .timeout(std::time::Duration::from_secs(300))
+            .send()
+            .await?;
         resp.error_for_status_ref()
             .map_err(|e| Error::Http(e.without_url()))?;
 
@@ -201,7 +226,13 @@ impl HttpClient {
             .text("type", filetype.to_owned())
             .part("media", part);
 
-        let resp = self.client.post(&url).multipart(form).send().await?;
+        let resp = self
+            .client
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(300))
+            .multipart(form)
+            .send()
+            .await?;
 
         let status = resp.status();
         let text = resp.text().await?;
