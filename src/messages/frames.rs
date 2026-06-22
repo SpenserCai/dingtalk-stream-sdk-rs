@@ -3,6 +3,37 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Deserializes an `Option<i64>` that may come as either a JSON number or a
+/// JSON string (DingTalk API sometimes sends timestamps as strings).
+fn deserialize_opt_i64_from_string_or_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(i64),
+    }
+
+    match Option::<StringOrNumber>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
+        Some(StringOrNumber::String(s)) => match s.parse::<i64>() {
+            Ok(n) => Ok(Some(n)),
+            Err(_) => Err(de::Error::custom(format!(
+                "failed to parse '{}' as i64",
+                s
+            ))),
+        },
+    }
+}
+
+
 /// 消息头
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Headers {
@@ -26,7 +57,12 @@ pub struct Headers {
     pub topic: Option<String>,
     // Event 专用字段
     /// 事件产生时间
-    #[serde(rename = "eventBornTime", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "eventBornTime",
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_opt_i64_from_string_or_number"
+    )]
     pub event_born_time: Option<i64>,
     /// 事件所属企业 ID
     #[serde(rename = "eventCorpId", skip_serializing_if = "Option::is_none")]
@@ -246,5 +282,52 @@ mod tests {
             headers.extensions.get("customField"),
             Some(&serde_json::Value::String("custom_value".to_owned()))
         );
+    }
+
+    // ── Timestamp string deserialization tests ──────────────────────
+
+    #[test]
+    fn test_event_born_time_as_string() {
+        let json = r#"{
+            "specVersion": "1.0",
+            "type": "EVENT",
+            "headers": {
+                "appId": "test_app",
+                "messageId": "msg_001",
+                "topic": "/v1.0/im/bot/messages/get",
+                "eventId": "evt_001",
+                "eventType": "chat_update_title",
+                "eventBornTime": "1690106592000",
+                "eventCorpId": "corp_001"
+            },
+            "data": "{}"
+        }"#;
+        let msg: StreamMessage = serde_json::from_str(json).unwrap();
+        match &msg {
+            StreamMessage::Event(body) => {
+                assert_eq!(body.headers.event_born_time, Some(1_690_106_592_000));
+            }
+            _ => panic!("expected Event"),
+        }
+    }
+
+    #[test]
+    fn test_event_born_time_missing() {
+        let json = r#"{
+            "specVersion": "1.0",
+            "type": "EVENT",
+            "headers": {
+                "messageId": "msg_001",
+                "topic": "test"
+            },
+            "data": "{}"
+        }"#;
+        let msg: StreamMessage = serde_json::from_str(json).unwrap();
+        match &msg {
+            StreamMessage::Event(body) => {
+                assert_eq!(body.headers.event_born_time, None);
+            }
+            _ => panic!("expected Event"),
+        }
     }
 }
