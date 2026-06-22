@@ -3,6 +3,37 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Deserializes an `Option<i64>` that may come as either a JSON number or a
+/// JSON string (DingTalk API sometimes sends timestamps as strings).
+fn deserialize_opt_i64_from_string_or_number<'de, D>(
+    deserializer: D,
+) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(i64),
+    }
+
+    match Option::<StringOrNumber>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(StringOrNumber::Number(n)) => Ok(Some(n)),
+        Some(StringOrNumber::String(s)) => match s.parse::<i64>() {
+            Ok(n) => Ok(Some(n)),
+            Err(_) => Err(de::Error::custom(format!(
+                "failed to parse '{}' as i64",
+                s
+            ))),
+        },
+    }
+}
+
+
 /// 聊天机器人消息
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatbotMessage {
@@ -21,7 +52,9 @@ pub struct ChatbotMessage {
     /// Session Webhook 过期时间
     #[serde(
         rename = "sessionWebhookExpiredTime",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_opt_i64_from_string_or_number"
     )]
     pub session_webhook_expired_time: Option<i64>,
     /// 消息 ID
@@ -40,7 +73,12 @@ pub struct ChatbotMessage {
     #[serde(rename = "isAdmin", skip_serializing_if = "Option::is_none")]
     pub is_admin: Option<bool>,
     /// 创建时间
-    #[serde(rename = "createAt", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "createAt",
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_opt_i64_from_string_or_number"
+    )]
     pub create_at: Option<i64>,
     /// 会话类型: "1"=单聊, "2"=群聊
     #[serde(rename = "conversationType", skip_serializing_if = "Option::is_none")]
@@ -721,5 +759,50 @@ mod tests {
         assert_eq!(codes.len(), 2);
         assert_eq!(codes[0].0, "picture");
         assert_eq!(codes[1].0, "picture");
+    }
+
+    // ── Timestamp string deserialization tests ──────────────────────
+
+    #[test]
+    fn test_chatbot_message_timestamp_as_number() {
+        let json: serde_json::Value = serde_json::from_str(r#"{
+            "msgtype": "text",
+            "text": {"content": "hello"},
+            "senderId": "user_001",
+            "msgId": "msg_001",
+            "sessionWebhookExpiredTime": 1690106592000,
+            "createAt": 1690106592000
+        }"#).unwrap();
+        let msg = ChatbotMessage::from_value(&json).unwrap();
+        assert_eq!(msg.session_webhook_expired_time, Some(1_690_106_592_000));
+        assert_eq!(msg.create_at, Some(1_690_106_592_000));
+    }
+
+    #[test]
+    fn test_chatbot_message_timestamp_as_string() {
+        let json: serde_json::Value = serde_json::from_str(r#"{
+            "msgtype": "text",
+            "text": {"content": "hello"},
+            "senderId": "user_001",
+            "msgId": "msg_001",
+            "sessionWebhookExpiredTime": "1690106592000",
+            "createAt": "1690106592000"
+        }"#).unwrap();
+        let msg = ChatbotMessage::from_value(&json).unwrap();
+        assert_eq!(msg.session_webhook_expired_time, Some(1_690_106_592_000));
+        assert_eq!(msg.create_at, Some(1_690_106_592_000));
+    }
+
+    #[test]
+    fn test_chatbot_message_timestamp_missing() {
+        let json: serde_json::Value = serde_json::from_str(r#"{
+            "msgtype": "text",
+            "text": {"content": "hello"},
+            "senderId": "user_001",
+            "msgId": "msg_001"
+        }"#).unwrap();
+        let msg = ChatbotMessage::from_value(&json).unwrap();
+        assert_eq!(msg.session_webhook_expired_time, None);
+        assert_eq!(msg.create_at, None);
     }
 }
